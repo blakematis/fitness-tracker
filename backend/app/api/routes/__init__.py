@@ -9,8 +9,12 @@ for OpenAPI grouping:
 
 from fastapi import APIRouter
 
-from app.api.routes import auth, users
+from app.api.routes import activity, auth, goals, integrations, metrics, users
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
+api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
+api_router.include_router(goals.router, prefix="/goals", tags=["goals"])
+api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])

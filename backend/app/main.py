@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app import models  # noqa: F401 - register all tables with Base.metadata
 from app.api.routes import api_router
 from app.database import Base, engine
-from app.models.user import User  # noqa: F401 - register table with Base.metadata
 
 
 @asynccontextmanager

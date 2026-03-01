@@ -31,7 +31,13 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run pytest
-        run: pytest -v --tb=short --cov=app --cov-report=term-missing
+        run: pytest -v --tb=short --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=95
         env:
           DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           SECRET_KEY: "test-secret-key-min-32-chars-for-ci"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: backend/coverage.xml
