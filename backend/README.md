@@ -100,7 +100,7 @@ All configuration is read from `backend/.env` (and environment variables). **Req
 
 ## Auth flow
 
-1. **Register:** `POST /api/auth/register` with body `{ "email": "...", "password": "..." }`. Returns `{ "id", "email" }`.
+1. **Register:** `POST /api/auth/register` with body `{ "email": "...", "password": "..." }`. Returns `{ "id", "email", "role" }`.
 2. **Login:** `POST /api/auth/login` with the same body. Returns `{ "access_token": "...", "token_type": "bearer" }`.
 3. **Protected routes:** Send header `Authorization: Bearer <access_token>` (e.g. for `GET /api/users/me`).
 
@@ -114,6 +114,20 @@ Use the `access_token` in the `Authorization: Bearer ...` header for any route t
 | POST | `/api/auth/register` | No | Create user; body: `UserCreate`. |
 | POST | `/api/auth/login` | No | Return JWT; body: `UserCreate`. |
 | GET | `/api/users/me` | Bearer | Current user profile. |
+| POST | `/api/metrics` | Bearer | Create the current user's body assessment (US units). |
+| GET | `/api/metrics/me` | Bearer | List only the current user's metrics. |
+| GET | `/api/metrics/me/{metric_id}` | Bearer | Get one metric owned by current user. |
+| POST | `/api/metrics/admin/obfuscated` | Super-admin | Obfuscated privacy-safe metric view; reason required. |
+| POST | `/api/metrics/admin/raw/{target_user_id}` | Super-admin | Raw break-glass metric access with required reason and audit. |
+| POST | `/api/activity/daily` | Bearer | Create/update one daily activity record for current user/date. |
+| GET | `/api/activity/daily` | Bearer | List current user's daily activity records (optional date range). |
+| POST | `/api/goals` | Bearer | Create a goal for the current user. |
+| GET | `/api/goals` | Bearer | List goals for the current user. |
+| PATCH | `/api/goals/{goal_id}` | Bearer | Update one goal owned by current user. |
+| DELETE | `/api/goals/{goal_id}` | Bearer | Delete one goal owned by current user. |
+| POST | `/api/integrations/connect` | Bearer | Connect or update a provider account for current user. |
+| GET | `/api/integrations` | Bearer | List connected provider accounts for current user. |
+| POST | `/api/integrations/{account_id}/sync` | Bearer | Queue a sync job for a provider account owned by current user. |
 
 Full request/response schemas are available in the OpenAPI docs at `/docs`.
 

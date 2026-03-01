@@ -62,3 +62,15 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+async def get_current_super_admin(user: User = Depends(get_current_user)) -> User:
+    """
+    Require the authenticated user to have the super_admin role.
+    """
+    if user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super-admin role required",
+        )
+    return user

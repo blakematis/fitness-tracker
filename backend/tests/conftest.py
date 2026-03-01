@@ -48,7 +48,21 @@ async def clear_users(client):
     from sqlalchemy import delete
 
     from app.database import engine
-    from app.models import User
+    from app.models import (
+        AdminAccessAudit,
+        BodyAssessment,
+        ConnectedAccount,
+        DailyActivityMetric,
+        Goal,
+        IntegrationSyncJob,
+        User,
+    )
 
     async with engine.begin() as conn:
+        await conn.execute(delete(AdminAccessAudit))
+        await conn.execute(delete(IntegrationSyncJob))
+        await conn.execute(delete(ConnectedAccount))
+        await conn.execute(delete(DailyActivityMetric))
+        await conn.execute(delete(Goal))
+        await conn.execute(delete(BodyAssessment))
         await conn.execute(delete(User))
