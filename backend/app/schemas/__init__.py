@@ -18,6 +18,7 @@ from app.schemas.metrics import (
     AdminRawMetricsRequest,
     BodyAssessmentCreate,
     BodyAssessmentResponse,
+    InBodyCsvUploadResponse,
 )
 from app.schemas.user import Token, UserCreate, UserResponse
 
@@ -27,6 +28,7 @@ __all__ = [
     "Token",
     "BodyAssessmentCreate",
     "BodyAssessmentResponse",
+    "InBodyCsvUploadResponse",
     "AdminObfuscatedMetric",
     "AdminRawMetricsRequest",
     "DailyActivityMetricCreate",

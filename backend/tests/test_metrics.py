@@ -35,6 +35,23 @@ def _metric_payload(weight: float = 180.5) -> dict:
     }
 
 
+def _inbody_csv(weight: float, body_fat_pct: float, visceral_fat_level: float) -> str:
+    return (
+        "date,Measurement device.,Weight(lb),Skeletal Muscle Mass(lb),Soft Lean Mass(lb),"
+        "Body Fat Mass(lb),BMI(kg/m²),Percent Body Fat(%),Basal Metabolic Rate(kJ),InBody Score,"
+        "Right Arm Lean Mass(lb),Left Arm Lean Mass(lb),Trunk Lean Mass(lb),Right Leg Lean Mass(lb),"
+        "Left leg Lean Mass(lb),Right Arm Fat Mass(lb),Left Arm Fat Mass(lb),Trunk Fat Mass(lb),"
+        "Right Leg Fat Mass(lb),Left Leg Fat Mass(lb),Right Arm ECW Ratio,Left Arm ECW Ratio,"
+        "Trunk ECW Ratio,Right Leg ECW Ratio,Left Leg ECW Ratio,Waist Hip Ratio,Waist Circumference(inch),"
+        "Visceral Fat Area(cm²),Visceral Fat Level(Level),Total Body Water(lb),Intracellular Water(lb),"
+        "Extracellular Water(lb),ECW Ratio,Upper-Lower,Upper,Lower,Leg Muscle Level(Level),Leg Lean Mass(lb),"
+        "Protein(lb),Mineral(lb),Bone Mineral Content(lb),Body Cell Mass(lb),SMI(kg/m²),Whole Body Phase Angle(°)\n"
+        f"20260305073323,H30,{weight},92.2,150.4,41.9,30.5,{body_fat_pct},8063,90.0,"
+        "-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,0.93,35.1,-,"
+        f"{visceral_fat_level},-,-,-,-,1,-,-,-,-,-,-,-,-,-,-\n"
+    )
+
+
 @pytest.mark.asyncio
 async def test_user_only_sees_own_metrics(client: AsyncClient):
     token_a = await _register_and_login(client, "a@example.com", "pass12345")
@@ -113,3 +130,52 @@ async def test_super_admin_obfuscated_view_and_raw_audit(client: AsyncClient):
 
         metrics = await session.execute(select(BodyAssessment))
         assert len(list(metrics.scalars().all())) == 1
+
+
+@pytest.mark.asyncio
+async def test_upload_inbody_csv_creates_metric(client: AsyncClient):
+    token = await _register_and_login(client, "upload@example.com", "pass12345")
+    csv_payload = _inbody_csv(weight=200.8, body_fat_pct=20.9, visceral_fat_level=8.0)
+    response = await client.post(
+        "/api/metrics/upload/inbody",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("inbody.csv", csv_payload, "text/csv")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"total_rows": 1, "inserted": 1, "updated": 0}
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(BodyAssessment))
+        metrics = list(result.scalars().all())
+        assert len(metrics) == 1
+        assert float(metrics[0].weight_lb) == 200.8
+        assert float(metrics[0].body_fat_pct) == 20.9
+        assert metrics[0].visceral_fat_score == 8
+        assert metrics[0].source == "inbody:H30"
+
+
+@pytest.mark.asyncio
+async def test_upload_inbody_csv_updates_existing_measurement(client: AsyncClient):
+    token = await _register_and_login(client, "upload-update@example.com", "pass12345")
+    first = await client.post(
+        "/api/metrics/upload/inbody",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("inbody.csv", _inbody_csv(weight=200.8, body_fat_pct=20.9, visceral_fat_level=8.0), "text/csv")},
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        "/api/metrics/upload/inbody",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("inbody.csv", _inbody_csv(weight=199.2, body_fat_pct=19.7, visceral_fat_level=7.0), "text/csv")},
+    )
+    assert second.status_code == 200
+    assert second.json() == {"total_rows": 1, "inserted": 0, "updated": 1}
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(BodyAssessment))
+        metrics = list(result.scalars().all())
+        assert len(metrics) == 1
+        assert float(metrics[0].weight_lb) == 199.2
+        assert float(metrics[0].body_fat_pct) == 19.7
+        assert metrics[0].visceral_fat_score == 7
