@@ -57,3 +57,11 @@ class AdminRawMetricsRequest(BaseModel):
     """Reason is required for raw metric access."""
 
     reason: str = Field(min_length=10, max_length=500)
+
+
+class InBodyCsvUploadResponse(BaseModel):
+    """Summary for an InBody CSV ingestion request."""
+
+    total_rows: int
+    inserted: int
+    updated: int

@@ -115,6 +115,7 @@ Use the `access_token` in the `Authorization: Bearer ...` header for any route t
 | POST | `/api/auth/login` | No | Return JWT; body: `UserCreate`. |
 | GET | `/api/users/me` | Bearer | Current user profile. |
 | POST | `/api/metrics` | Bearer | Create the current user's body assessment (US units). |
+| POST | `/api/metrics/upload/inbody` | Bearer | Upload InBody CSV and upsert body assessments by timestamp. |
 | GET | `/api/metrics/me` | Bearer | List only the current user's metrics. |
 | GET | `/api/metrics/me/{metric_id}` | Bearer | Get one metric owned by current user. |
 | POST | `/api/metrics/admin/obfuscated` | Super-admin | Obfuscated privacy-safe metric view; reason required. |
@@ -130,6 +131,17 @@ Use the `access_token` in the `Authorization: Bearer ...` header for any route t
 | POST | `/api/integrations/{account_id}/sync` | Bearer | Queue a sync job for a provider account owned by current user. |
 
 Full request/response schemas are available in the OpenAPI docs at `/docs`.
+
+## API documentation and collections
+
+- Human-readable API reference: `backend/docs/API_REFERENCE.md`
+- Interactive docs (Swagger UI): `/docs`
+- ReDoc: `/redoc`
+- OpenAPI JSON: `/openapi.json`
+- Bruno collection: `backend/bruno/`
+  - open Bruno and import the folder
+  - use `environments/Local.bru`
+  - set `baseUrl`, `accessToken`, and `adminAccessToken`
 
 ## Running with Docker
 

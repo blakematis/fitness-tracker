@@ -2,7 +2,11 @@
 Metrics endpoints with strict ownership and super-admin privacy controls.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import csv
+import io
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +18,69 @@ from app.schemas import (
     AdminRawMetricsRequest,
     BodyAssessmentCreate,
     BodyAssessmentResponse,
+    InBodyCsvUploadResponse,
 )
 
 router = APIRouter()
+
+_INBODY_DATE_COL = "date"
+_INBODY_DEVICE_COL = "Measurement device."
+_INBODY_WEIGHT_COL = "Weight(lb)"
+_INBODY_SMM_COL = "Skeletal Muscle Mass(lb)"
+_INBODY_SOFT_LEAN_COL = "Soft Lean Mass(lb)"
+_INBODY_FAT_MASS_COL = "Body Fat Mass(lb)"
+_INBODY_PBF_COL = "Percent Body Fat(%)"
+_INBODY_VFL_COL = "Visceral Fat Level(Level)"
+_INBODY_WAIST_COL = "Waist Circumference(inch)"
+
+_INBODY_REQUIRED_COLUMNS = {
+    _INBODY_DATE_COL,
+    _INBODY_WEIGHT_COL,
+}
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized or normalized == "-":
+        return None
+    return float(normalized)
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    parsed = _parse_optional_float(value)
+    if parsed is None:
+        return None
+    return int(round(parsed))
+
+
+def _parse_inbody_timestamp(value: str) -> datetime:
+    return datetime.strptime(value.strip(), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+
+
+def _measurement_key(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y%m%d%H%M%S")
+
+
+def _parse_inbody_row(row: dict[str, str]) -> dict[str, object]:
+    measured_at = _parse_inbody_timestamp(row[_INBODY_DATE_COL])
+    device = (row.get(_INBODY_DEVICE_COL) or "").strip()
+    source = f"inbody:{device}" if device else "inbody_csv"
+    return {
+        "measured_at": measured_at,
+        "weight_lb": float(row[_INBODY_WEIGHT_COL]),
+        "muscle_mass_lb": _parse_optional_float(row.get(_INBODY_SMM_COL)),
+        "lean_mass_lb": _parse_optional_float(row.get(_INBODY_SOFT_LEAN_COL)),
+        "fat_mass_lb": _parse_optional_float(row.get(_INBODY_FAT_MASS_COL)),
+        "body_fat_pct": _parse_optional_float(row.get(_INBODY_PBF_COL)),
+        "visceral_fat_score": _parse_optional_int(row.get(_INBODY_VFL_COL)),
+        "waist_in": _parse_optional_float(row.get(_INBODY_WAIST_COL)),
+        "source": source,
+        "notes": "Imported from InBody CSV upload",
+    }
 
 
 def _mask_email(email: str) -> str:
@@ -44,6 +108,78 @@ async def create_my_metric(
     await db.flush()
     await db.refresh(metric)
     return metric
+
+
+@router.post("/upload/inbody", response_model=InBodyCsvUploadResponse)
+async def upload_inbody_csv(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> InBodyCsvUploadResponse:
+    """Ingest an InBody CSV for the authenticated user and upsert by measured_at."""
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV file is empty")
+    try:
+        decoded = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV must be UTF-8 encoded",
+        ) from exc
+
+    reader = csv.DictReader(io.StringIO(decoded))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV header is missing")
+    missing_columns = sorted(_INBODY_REQUIRED_COLUMNS - set(reader.fieldnames))
+    if missing_columns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"CSV is missing required columns: {', '.join(missing_columns)}",
+        )
+
+    parsed_rows: list[dict[str, object]] = []
+    total_rows = 0
+    for line_no, row in enumerate(reader, start=2):
+        if not any((value or "").strip() for value in row.values()):
+            continue
+        total_rows += 1
+        try:
+            parsed_rows.append(_parse_inbody_row(row))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid CSV row at line {line_no}: {exc}",
+            ) from exc
+
+    if not parsed_rows:
+        return InBodyCsvUploadResponse(total_rows=0, inserted=0, updated=0)
+
+    existing_result = await db.execute(
+        select(BodyAssessment).where(BodyAssessment.user_id == user.id)
+    )
+    existing_by_measurement_key = {
+        _measurement_key(metric.measured_at): metric for metric in existing_result.scalars().all()
+    }
+
+    inserted = 0
+    updated = 0
+    for parsed in parsed_rows:
+        measured_at = parsed["measured_at"]
+        measurement_key = _measurement_key(measured_at)
+        existing = existing_by_measurement_key.get(measurement_key)
+        if existing is None:
+            created = BodyAssessment(user_id=user.id, **parsed)
+            db.add(created)
+            existing_by_measurement_key[measurement_key] = created
+            inserted += 1
+            continue
+        for key, value in parsed.items():
+            setattr(existing, key, value)
+        updated += 1
+
+    await db.flush()
+    return InBodyCsvUploadResponse(total_rows=total_rows, inserted=inserted, updated=updated)
 
 
 @router.get("/me", response_model=list[BodyAssessmentResponse])
